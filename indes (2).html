@@ -3,277 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Asistencia Escolar</title>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <title>Lector de Códigos QR</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        :root { --primary: #4F46E5; --bg: #F3F4F6; --text: #1F2937; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: auto; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
-        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #E5E7EB; }
-        th { background-color: #F9FAFB; }
-        button { background-color: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; transition: 0.3s; }
-        button:hover { background-color: #4338CA; }
-        .btn-danger { background-color: #EF4444; }
-        .btn-danger:hover { background-color: #DC2626; }
-        .btn-warning { background-color: #F59E0B; }
-        .btn-warning:hover { background-color: #D97706; }
-        .btn-success { background-color: #10B981; }
-        .btn-success:hover { background-color: #059669; }
-        #reader { width: 100%; max-width: 400px; margin: auto; display: none; }
+        :root {
+            --bg-color: #f3f4f6;
+            --primary-color: #2563eb;
+            --text-color: #1f2937;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #1d4ed8;
+        }
+        #reader {
+            width: 100%;
+            margin-bottom: 20px;
+            display: none; /* Oculto por defecto */
+        }
+        .history-container {
+            text-align: left;
+            margin-top: 20px;
+            width: 100%;
+        }
+        .record {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+        .record-time {
+            font-size: 0.85em;
+            color: #6b7280;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .record-data {
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="header">
-        <h2>Gestión de Estudiantes y Asistencia</h2>
-        <div>
-            <button onclick="exportarBackup()" class="btn-warning">💾 Exportar JS</button>
-            <button onclick="toggleScanner()" class="btn-success">📷 Leer QR</button>
-        </div>
-    </div>
-
-    <div class="card" id="scannerCard" style="display: none; text-align: center;">
-        <h3>Escáner de Asistencia</h3>
-        <p>Apunta el código QR del estudiante (El código QR debe contener el ID del estudiante, ej: "EST-01")</p>
+    <div class="container">
+        <h2>Lector QR</h2>
+        
+        <button id="btn-scan" onclick="iniciarEscaner()">📷 Activar Cámara</button>
         <div id="reader"></div>
-        <button onclick="toggleScanner()" class="btn-danger" style="margin-top: 15px;">Cerrar Escáner</button>
-    </div>
 
-    <div class="card">
-        <div class="header" style="margin: 0;">
-            <h3>Lista de Estudiantes</h3>
-            <button onclick="crearEstudiante()">+ Nuevo Estudiante</button>
+        <div class="history-container">
+            <h3>Historial de Lecturas</h3>
+            <div id="history-list"></div>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID / QR Code</th>
-                    <th>Nombre</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="studentTableBody"></tbody>
-        </table>
     </div>
 
-    <div class="card">
-        <h3>Asistencias Recientes</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Fecha y Hora</th>
-                    <th>Estudiante</th>
-                    <th>Estado</th>
-                </tr>
-            </thead>
-            <tbody id="attendanceTableBody"></tbody>
-        </table>
-    </div>
-</div>
+    <script>
+        let html5QrcodeScanner = null;
+        let registros = JSON.parse(localStorage.getItem('qr_records')) || [];
 
-<script>
-    // 1. Inicialización de Datos (20 registros por defecto)
-    let estudiantes = JSON.parse(localStorage.getItem('estudiantes')) || [];
-    let asistencias = JSON.parse(localStorage.getItem('asistencias')) || [];
+        // Función para mostrar los registros guardados al cargar la página
+        function renderizarHistorial() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = ''; // Limpiar lista
+            
+            // Mostrar del más reciente al más antiguo
+            const registrosInvertidos = [...registros].reverse();
 
-    if (estudiantes.length === 0) {
-        for (let i = 1; i <= 20; i++) {
-            estudiantes.push({ id: `EST-${i.toString().padStart(2, '0')}`, nombre: `Estudiante ${i}` });
-        }
-        guardarDatos();
-    }
-
-    // 2. Funciones de Renderizado
-    function renderizarEstudiantes() {
-        const tbody = document.getElementById('studentTableBody');
-        tbody.innerHTML = '';
-        estudiantes.forEach((est, index) => {
-            tbody.innerHTML += `
-                <tr>
-                    <td><strong>${est.id}</strong></td>
-                    <td>${est.nombre}</td>
-                    <td>
-                        <button onclick="editarEstudiante(${index})" class="btn-warning">Editar</button>
-                        <button onclick="eliminarEstudiante(${index})" class="btn-danger">Eliminar</button>
-                    </td>
-                </tr>`;
-        });
-    }
-
-    function renderizarAsistencias() {
-        const tbody = document.getElementById('attendanceTableBody');
-        tbody.innerHTML = '';
-        // Mostrar solo las últimas 10 asistencias
-        const recientes = asistencias.slice(-10).reverse();
-        recientes.forEach(asis => {
-            tbody.innerHTML += `
-                <tr>
-                    <td>${asis.fecha}</td>
-                    <td>${asis.nombre} (${asis.id})</td>
-                    <td><span style="color: green; font-weight: bold;">Presente</span></td>
-                </tr>`;
-        });
-    }
-
-    function guardarDatos() {
-        localStorage.setItem('estudiantes', JSON.stringify(estudiantes));
-        localStorage.setItem('asistencias', JSON.stringify(asistencias));
-        renderizarEstudiantes();
-        renderizarAsistencias();
-    }
-
-    // 3. CRUD Estudiantes con SweetAlert2
-    async function crearEstudiante() {
-        const { value: formValues } = await Swal.fire({
-            title: 'Nuevo Estudiante',
-            html: `
-                <input id="swal-id" class="swal2-input" placeholder="ID (Ej: EST-21)">
-                <input id="swal-nombre" class="swal2-input" placeholder="Nombre Completo">`,
-            focusConfirm: false,
-            showCancelButton: true,
-            preConfirm: () => {
-                return {
-                    id: document.getElementById('swal-id').value,
-                    nombre: document.getElementById('swal-nombre').value
-                }
+            if (registrosInvertidos.length === 0) {
+                list.innerHTML = '<p style="color: #6b7280; text-align: center;">Aún no hay códigos escaneados.</p>';
+                return;
             }
-        });
 
-        if (formValues && formValues.id && formValues.nombre) {
-            estudiantes.push(formValues);
-            guardarDatos();
-            Swal.fire('Guardado', 'Estudiante registrado', 'success');
+            registrosInvertidos.forEach(record => {
+                list.innerHTML += `
+                    <div class="record">
+                        <span class="record-time">🗓️ ${record.fecha}</span>
+                        <span class="record-data">📄 ${record.datos}</span>
+                    </div>
+                `;
+            });
         }
-    }
 
-    async function editarEstudiante(index) {
-        const est = estudiantes[index];
-        const { value: formValues } = await Swal.fire({
-            title: 'Editar Estudiante',
-            html: `
-                <input id="swal-id" class="swal2-input" value="${est.id}">
-                <input id="swal-nombre" class="swal2-input" value="${est.nombre}">`,
-            focusConfirm: false,
-            showCancelButton: true,
-            preConfirm: () => {
-                return {
-                    id: document.getElementById('swal-id').value,
-                    nombre: document.getElementById('swal-nombre').value
-                }
-            }
-        });
+        // Función para activar la cámara
+        function iniciarEscaner() {
+            const readerDiv = document.getElementById('reader');
+            const btnScan = document.getElementById('btn-scan');
+            
+            readerDiv.style.display = 'block';
+            btnScan.style.display = 'none'; // Ocultar el botón mientras escanea
 
-        if (formValues) {
-            estudiantes[index] = formValues;
-            guardarDatos();
-            Swal.fire('Actualizado', 'Datos modificados', 'success');
-        }
-    }
+            // Configurar el escáner
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader",
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                false
+            );
 
-    function eliminarEstudiante(index) {
-        Swal.fire({
-            title: '¿Estás seguro?',
-            text: "No podrás revertir esto",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#EF4444',
-            confirmButtonText: 'Sí, eliminar'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                estudiantes.splice(index, 1);
-                guardarDatos();
-                Swal.fire('Eliminado', 'El registro ha sido borrado.', 'success');
-            }
-        });
-    }
-
-    // 4. Lector QR para Asistencia
-    let html5QrcodeScanner = null;
-    let scanning = false;
-
-    function toggleScanner() {
-        const card = document.getElementById('scannerCard');
-        const reader = document.getElementById('reader');
-        
-        if (!scanning) {
-            card.style.display = 'block';
-            reader.style.display = 'block';
-            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
             html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-            scanning = true;
-        } else {
+        }
+
+        // Función que se ejecuta cuando lee un QR correctamente
+        function onScanSuccess(decodedText, decodedResult) {
+            // Detener el escáner
             html5QrcodeScanner.clear();
-            card.style.display = 'none';
-            reader.style.display = 'none';
-            scanning = false;
-        }
-    }
+            document.getElementById('reader').style.display = 'none';
+            document.getElementById('btn-scan').style.display = 'block';
+            document.getElementById('btn-scan').innerText = "📷 Escanear Otro QR";
 
-    function onScanSuccess(decodedText, decodedResult) {
-        // Detener el escáner temporalmente
-        html5QrcodeScanner.pause(true);
-
-        const estudiante = estudiantes.find(e => e.id === decodedText);
-        
-        if (estudiante) {
+            // Obtener fecha y hora actual
             const fechaActual = new Date().toLocaleString('es-ES');
-            asistencias.push({ id: estudiante.id, nombre: estudiante.nombre, fecha: fechaActual });
-            guardarDatos();
-            
-            Swal.fire({
-                title: 'Asistencia Registrada',
-                text: `${estudiante.nombre} ha marcado asistencia.`,
-                icon: 'success',
-                timer: 2000,
-                showConfirmButton: false
-            }).then(() => html5QrcodeScanner.resume());
-            
-        } else {
-            Swal.fire({
-                title: 'Error',
-                text: 'Código QR no registrado en la base de datos.',
-                icon: 'error',
-                timer: 2000,
-                showConfirmButton: false
-            }).then(() => html5QrcodeScanner.resume());
+
+            // Guardar el registro
+            const nuevoRegistro = {
+                datos: decodedText,
+                fecha: fechaActual
+            };
+
+            registros.push(nuevoRegistro);
+            localStorage.setItem('qr_records', JSON.stringify(registros));
+
+            // Actualizar la vista
+            renderizarHistorial();
         }
-    }
 
-    function onScanFailure(error) {
-        // Se ignora el fallo de lectura para que siga buscando un código válido
-    }
+        // Función en caso de que un frame no detecte QR (se ignora para que siga buscando)
+        function onScanFailure(error) {
+            // console.warn(`Error al escanear: ${error}`);
+        }
 
-    // 5. Exportar Base de Datos a .js
-    function exportarBackup() {
-        const data = {
-            estudiantes: estudiantes,
-            asistencias: asistencias,
-            fechaBackup: new Date().toISOString()
-        };
-        
-        const fileContent = `// Backup generado el ${new Date().toLocaleString()}\n\nconst backupDatos = ${JSON.stringify(data, null, 2)};\n\nconsole.log("Datos cargados", backupDatos);`;
-        
-        const blob = new Blob([fileContent], { type: 'text/javascript' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `backup_escolar_${Date.now()}.js`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        // Inicializar la vista cargando el historial
+        renderizarHistorial();
+    </script>
 
-        Swal.fire('Exportado', 'El archivo JS se ha descargado correctamente.', 'success');
-    }
-
-    // Inicializar la vista
-    renderizarEstudiantes();
-    renderizarAsistencias();
-</script>
 </body>
 </html>
