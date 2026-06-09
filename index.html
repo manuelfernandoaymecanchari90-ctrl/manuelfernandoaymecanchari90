@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Trabajadores y Asistencia</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        :root { --primary: #2563EB; --bg: #F3F4F6; --text: #1F2937; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #E5E7EB; }
+        th { background-color: #F9FAFB; }
+        button { background-color: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; transition: 0.3s; margin-right: 5px; }
+        button:hover { background-color: #1D4ED8; }
+        .btn-danger { background-color: #EF4444; }
+        .btn-danger:hover { background-color: #DC2626; }
+        .btn-warning { background-color: #F59E0B; }
+        .btn-warning:hover { background-color: #D97706; }
+        .btn-success { background-color: #10B981; }
+        .btn-success:hover { background-color: #059669; }
+        #reader { width: 100%; max-width: 400px; margin: auto; display: none; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { background-color: #D1D5DB; color: #374151; }
+        .tab-btn.active { background-color: var(--primary); color: white; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2>Panel de Recursos Humanos</h2>
+        <div>
+            <button onclick="exportarBackup()" class="btn-warning">💾 Exportar JS</button>
+            <button onclick="toggleScanner()" class="btn-success">📷 Lector QR</button>
+        </div>
+    </div>
+
+    <div class="card" id="scannerCard" style="display: none; text-align: center;">
+        <h3>Registrar Asistencia</h3>
+        <p>Apunta el código QR del trabajador (El QR debe contener el ID, ej: "EMP-01")</p>
+        <div id="reader"></div>
+        <button onclick="toggleScanner()" class="btn-danger" style="margin-top: 15px;">Cerrar Escáner</button>
+    </div>
+
+    <div class="tabs">
+        <button id="btnTabTrabajadores" class="tab-btn active" onclick="mostrarTab('trabajadores')">Gestión de Trabajadores</button>
+        <button id="btnTabAsistencias" class="tab-btn" onclick="mostrarTab('asistencias')">Control de Asistencias</button>
+    </div>
+
+    <div class="card" id="tabTrabajadores">
+        <div class="header" style="margin: 0;">
+            <h3>Directorio de Trabajadores</h3>
+            <button onclick="crearTrabajador()">+ Nuevo Trabajador</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID / QR</th>
+                    <th>Nombre</th>
+                    <th>Cargo</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="workerTableBody"></tbody>
+        </table>
+    </div>
+
+    <div class="card" id="tabAsistencias" style="display: none;">
+        <div class="header" style="margin: 0;">
+            <h3>Registro Histórico de Asistencias</h3>
+            <button onclick="registrarAsistenciaManual()">+ Registro Manual</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Fecha y Hora</th>
+                    <th>Trabajador</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="attendanceTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // 1. Inicialización de Datos (20 registros por defecto)
+    let trabajadores = JSON.parse(localStorage.getItem('trabajadores')) || [];
+    let asistencias = JSON.parse(localStorage.getItem('asistencias')) || [];
+
+    if (trabajadores.length === 0) {
+        for (let i = 1; i <= 20; i++) {
+            trabajadores.push({ id: `EMP-${i.toString().padStart(2, '0')}`, nombre: `Trabajador ${i}`, cargo: 'Operario' });
+        }
+        guardarDatos();
+    }
+
+    // Navegación por Pestañas
+    function mostrarTab(tab) {
+        document.getElementById('tabTrabajadores').style.display = tab === 'trabajadores' ? 'block' : 'none';
+        document.getElementById('tabAsistencias').style.display = tab === 'asistencias' ? 'block' : 'none';
+        
+        document.getElementById('btnTabTrabajadores').classList.toggle('active', tab === 'trabajadores');
+        document.getElementById('btnTabAsistencias').classList.toggle('active', tab === 'asistencias');
+    }
+
+    // 2. Funciones de Renderizado
+    function renderizarTrabajadores() {
+        const tbody = document.getElementById('workerTableBody');
+        tbody.innerHTML = '';
+        trabajadores.forEach((trab, index) => {
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${trab.id}</strong></td>
+                    <td>${trab.nombre}</td>
+                    <td>${trab.cargo}</td>
+                    <td>
+                        <button onclick="editarTrabajador(${index})" class="btn-warning">Editar</button>
+                        <button onclick="eliminarTrabajador(${index})" class="btn-danger">Eliminar</button>
+                    </td>
+                </tr>`;
+        });
+    }
+
+    function renderizarAsistencias() {
+        const tbody = document.getElementById('attendanceTableBody');
+        tbody.innerHTML = '';
+        // Mostrar del más reciente al más antiguo
+        const listado = [...asistencias].reverse();
+        listado.forEach((asis, index) => {
+            // Calculamos el índice real basado en el arreglo original
+            const realIndex = asistencias.length - 1 - index;
+            tbody.innerHTML += `
+                <tr>
+                    <td>${asis.fecha}</td>
+                    <td>${asis.nombre} (${asis.id})</td>
+                    <td><span style="color: green; font-weight: bold;">Asistió</span></td>
+                    <td>
+                        <button onclick="eliminarAsistencia(${realIndex})" class="btn-danger">Borrar</button>
+                    </td>
+                </tr>`;
+        });
+    }
+
+    function guardarDatos() {
+        localStorage.setItem('trabajadores', JSON.stringify(trabajadores));
+        localStorage.setItem('asistencias', JSON.stringify(asistencias));
+        renderizarTrabajadores();
+        renderizarAsistencias();
+    }
+
+    // 3. CRUD Trabajadores con SweetAlert2
+    async function crearTrabajador() {
+        const { value: formValues } = await Swal.fire({
+            title: 'Nuevo Trabajador',
+            html: `
+                <input id="swal-id" class="swal2-input" placeholder="ID (Ej: EMP-21)">
+                <input id="swal-nombre" class="swal2-input" placeholder="Nombre Completo">
+                <input id="swal-cargo" class="swal2-input" placeholder="Cargo">`,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'Guardar',
+            preConfirm: () => {
+                return {
+                    id: document.getElementById('swal-id').value,
+                    nombre: document.getElementById('swal-nombre').value,
+                    cargo: document.getElementById('swal-cargo').value
+                }
+            }
+        });
+
+        if (formValues && formValues.id && formValues.nombre) {
+            trabajadores.push(formValues);
+            guardarDatos();
+            Swal.fire('Guardado', 'Trabajador registrado', 'success');
+        }
+    }
+
+    async function editarTrabajador(index) {
+        const trab = trabajadores[index];
+        const { value: formValues } = await Swal.fire({
+            title: 'Editar Trabajador',
+            html: `
+                <input id="swal-id" class="swal2-input" value="${trab.id}">
+                <input id="swal-nombre" class="swal2-input" value="${trab.nombre}">
+                <input id="swal-cargo" class="swal2-input" value="${trab.cargo || ''}">`,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'Actualizar',
+            preConfirm: () => {
+                return {
+                    id: document.getElementById('swal-id').value,
+                    nombre: document.getElementById('swal-nombre').value,
+                    cargo: document.getElementById('swal-cargo').value
+                }
+            }
+        });
+
+        if (formValues) {
+            trabajadores[index] = formValues;
+            guardarDatos();
+            Swal.fire('Actualizado', 'Datos modificados correctamente', 'success');
+        }
+    }
+
+    function eliminarTrabajador(index) {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: "Se eliminará el registro del trabajador.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'Sí, eliminar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                trabajadores.splice(index, 1);
+                guardarDatos();
+                Swal.fire('Eliminado', 'El registro ha sido borrado.', 'success');
+            }
+        });
+    }
+
+    // 4. CRUD Asistencias
+    async function registrarAsistenciaManual() {
+        let opciones = trabajadores.map(t => `<option value="${t.id}">${t.nombre} (${t.id})</option>`).join('');
+        
+        const { value: formValues } = await Swal.fire({
+            title: 'Registro Manual',
+            html: `
+                <select id="swal-trab" class="swal2-input">${opciones}</select>
+                <input type="datetime-local" id="swal-fecha" class="swal2-input">`,
+            focusConfirm: false,
+            showCancelButton: true,
+            preConfirm: () => {
+                return {
+                    id: document.getElementById('swal-trab').value,
+                    fechaRaw: document.getElementById('swal-fecha').value
+                }
+            }
+        });
+
+        if (formValues && formValues.fechaRaw) {
+            const trabajador = trabajadores.find(t => t.id === formValues.id);
+            const fechaFormateada = new Date(formValues.fechaRaw).toLocaleString('es-ES');
+            asistencias.push({ id: trabajador.id, nombre: trabajador.nombre, fecha: fechaFormateada });
+            guardarDatos();
+            Swal.fire('Registrado', 'Asistencia guardada', 'success');
+        }
+    }
+
+    function eliminarAsistencia(index) {
+        Swal.fire({
+            title: 'Borrar Registro',
+            text: "¿Deseas eliminar este registro de asistencia?",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'Eliminar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                asistencias.splice(index, 1);
+                guardarDatos();
+                Swal.fire('Eliminado', 'Registro borrado.', 'success');
+            }
+        });
+    }
+
+    // 5. Lector QR para Asistencia Automática
+    let html5QrcodeScanner = null;
+    let scanning = false;
+
+    function toggleScanner() {
+        const card = document.getElementById('scannerCard');
+        const reader = document.getElementById('reader');
+        
+        if (!scanning) {
+            card.style.display = 'block';
+            reader.style.display = 'block';
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+            scanning = true;
+        } else {
+            html5QrcodeScanner.clear();
+            card.style.display = 'none';
+            reader.style.display = 'none';
+            scanning = false;
+        }
+    }
+
+    function onScanSuccess(decodedText, decodedResult) {
+        html5QrcodeScanner.pause(true);
+
+        const trabajador = trabajadores.find(t => t.id === decodedText);
+        
+        if (trabajador) {
+            const fechaActual = new Date().toLocaleString('es-ES');
+            asistencias.push({ id: trabajador.id, nombre: trabajador.nombre, fecha: fechaActual });
+            guardarDatos();
+            
+            Swal.fire({
+                title: 'Asistencia Registrada',
+                text: `${trabajador.nombre} ha marcado asistencia.`,
+                icon: 'success',
+                timer: 2000,
+                showConfirmButton: false
+            }).then(() => html5QrcodeScanner.resume());
+            
+        } else {
+            Swal.fire({
+                title: 'Error',
+                text: 'Código QR no pertenece a ningún trabajador.',
+                icon: 'error',
+                timer: 2000,
+                showConfirmButton: false
+            }).then(() => html5QrcodeScanner.resume());
+        }
+    }
+
+    function onScanFailure(error) {
+        // Se ignora para seguir buscando
+    }
+
+    // 6. Exportar Base de Datos a .js
+    function exportarBackup() {
+        const data = {
+            trabajadores: trabajadores,
+            asistencias: asistencias,
+            fechaBackup: new Date().toISOString()
+        };
+        
+        const fileContent = `// Backup generado el ${new Date().toLocaleString()}\n\nconst backupDatos = ${JSON.stringify(data, null, 2)};\n\nconsole.log("Datos cargados", backupDatos);`;
+        
+        const blob = new Blob([fileContent], { type: 'text/javascript' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backup_empresa_${Date.now()}.js`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        Swal.fire('Exportado', 'El backup se ha descargado correctamente.', 'success');
+    }
+
+    // Inicializar la vista
+    renderizarTrabajadores();
+    renderizarAsistencias();
+</script>
+</body>
+</html>
